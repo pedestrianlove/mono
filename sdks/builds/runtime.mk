@@ -4,6 +4,7 @@
 #  $(1): product
 #  $(2): target
 #  $(3): host triple
+#  $(4): exclude from archive
 #
 # Flags:
 #  _$(1)-$(2)_AR
@@ -100,10 +101,15 @@ configure-$(1): configure-$(1)-$(2)
 .PHONY: build-$(1)
 build-$(1): build-$(1)-$(2)
 
-.PHONY: archive-$(1)
-archive-$(1): package-$(1)-$(2)
+.PHONY: package-$(1)
+package-$(1): package-$(1)-$(2) $$(ADDITIONAL_PACKAGE_DEPS)
 
+.PHONY: archive-$(1)
+archive-$(1): package-$(1)
+
+ifneq ($(4),yes)
 $(1)_ARCHIVE += $(1)-$(2)-$$(CONFIGURATION)
+endif
 
 endef
 
@@ -152,12 +158,18 @@ _cross-runtime_$(1)-$(2)_CONFIGURE_FLAGS= \
 
 .stamp-$(1)-$(2)-$$(CONFIGURATION)-configure: | $$(if $$(IGNORE_PROVISION_LLVM),,provision-$(6))
 
+ifdef USE_OFFSETS_TOOL_PY
+$$(TOP)/sdks/builds/$(1)-$(2)-$$(CONFIGURATION)/$(4).h: .stamp-$(1)-$(2)-$$(CONFIGURATION)-configure | configure-$(1)-$(5)
+	$(MAKE) -C $(TOP)/tools/offsets-tool-py setup
+	python $(TOP)/tools/offsets-tool-py/offsets-tool.py --targetdir="$$(TOP)/sdks/builds/$(1)-$(5)-$$(CONFIGURATION)" --abi=$(7) --monodir="$$(TOP)" --outfile="$$@" $$(_$(1)-$(2)_OFFSETS_DUMPER_ARGS)
+else
 $$(TOP)/sdks/builds/$(1)-$(2)-$$(CONFIGURATION)/$(4).h: .stamp-$(1)-$(2)-$$(CONFIGURATION)-configure $$(TOP)/tools/offsets-tool/MonoAotOffsetsDumper.exe | configure-$(1)-$(5)
 	cd $$(TOP)/sdks/builds/$(1)-$(2)-$$(CONFIGURATION) && \
 		MONO_PATH=$$(TOP)/tools/offsets-tool/CppSharp/$$(if $$(filter $$(UNAME),Darwin),osx_32,$$(if $$(filter $$(UNAME),Linux),linux_64,$$(error "Unknown UNAME='$$(UNAME)'"))) \
 			mono $$(if $$(filter $$(UNAME),Darwin),--arch=32) --debug "$$(TOP)/tools/offsets-tool/MonoAotOffsetsDumper.exe" \
 				--abi $(7) --outfile "$$@" --mono "$$(TOP)" --targetdir "$$(TOP)/sdks/builds/$(1)-$(5)-$$(CONFIGURATION)" \
 					$$(_$(1)-$(2)_OFFSETS_DUMPER_ARGS)
+endif
 
 build-$(1)-$(2): $$(TOP)/sdks/builds/$(1)-$(2)-$$(CONFIGURATION)/$(4).h
 
